@@ -2,8 +2,19 @@
 
 CLI-інструмент, що виводить поточну платформу і архітектуру.
 
+**Актуальна версія:**
 ```
  >>> Platform: darwin/amd64
+     Version:  v0.3.0
+```
+
+**Якщо є оновлення:**
+```
+ >>> Platform: darwin/amd64
+     Version:  v0.2.1
+
+Нова версія доступна: v0.2.1 -> v0.3.0
+Оновити: curl -fsSL https://raw.githubusercontent.com/ognistyi/goplatform/main/install.sh | sh
 ```
 
 ## Встановлення
