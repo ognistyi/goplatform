@@ -213,12 +213,33 @@ curl -fsSL https://raw.githubusercontent.com/ognistyi/goplatform/main/install.sh
 ## Локальна збірка
 
 ```bash
-go build -o goplatform .
+# звичайна збірка
+CGO_ENABLED=0 go build -o goplatform .
 ./goplatform
+#  >>> Platform: darwin/amd64
+#      Version:  dev
 ```
 
-Крос-компіляція вручну:
+`CGO_ENABLED=0` — вимикає C-бібліотеки, збірка використовує чистий Go.
+Потрібно на macOS через `net/http`: без цього прапора Go підтягує системний DNS-резолвер через CGO,
+що на нових версіях macOS дає помилку `missing LC_UUID`.
 
 ```bash
-GOOS=linux GOARCH=arm64 go build -o goplatform-linux-arm64 .
+# збірка з симуляцією конкретної версії (для тесту нотифікацій)
+CGO_ENABLED=0 go build -ldflags "-X main.version=v0.1.0" -o goplatform .
+./goplatform
+#  >>> Platform: darwin/amd64
+#      Version:  v0.1.0
+#
+#  Нова версія доступна: v0.1.0 -> v0.3.0
+#  Оновити: curl -fsSL ...
+```
+
+### Крос-компіляція вручну
+
+```bash
+CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -o goplatform-linux-amd64 .
+CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -o goplatform-linux-arm64 .
+CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -o goplatform-darwin-arm64 .
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o goplatform-windows-amd64.exe .
 ```
