@@ -44,7 +44,9 @@ install_binary() {
     EXT=""
     [ "$OS" = "windows" ] && EXT=".exe"
 
-    FILENAME="${BINARY}_${VERSION}_${OS}_${ARCH}${EXT}"
+    # GoReleaser strips the leading 'v' from the tag in artifact names
+    VERSION_NUM="${VERSION#v}"
+    FILENAME="${BINARY}_${VERSION_NUM}_${OS}_${ARCH}${EXT}"
     URL="https://github.com/${REPO}/releases/download/${VERSION}/${FILENAME}"
 
     TMP=$(mktemp -d)
