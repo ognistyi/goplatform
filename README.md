@@ -19,9 +19,16 @@ CLI-інструмент, що виводить поточну платформ�
 
 ## Встановлення
 
+**macOS / Linux:**
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ognistyi/goplatform/main/install.sh | sh
 ```
+
+**Windows** (PowerShell):
+```powershell
+irm https://raw.githubusercontent.com/ognistyi/goplatform/main/install.ps1 | iex
+```
+Встановлює в `%LOCALAPPDATA%\Programs\goplatform\` і додає в `PATH`.
 
 ---
 
