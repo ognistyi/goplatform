@@ -1,94 +1,169 @@
 # goplatform
 
-CLI tool that prints the current platform name and architecture.
+CLI-інструмент, що виводить поточну платформу і архітектуру.
 
 ```
  >>> Platform: darwin/amd64
 ```
 
-## Install
+## Встановлення
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ognistyi/goplatform/main/install.sh | sh
 ```
 
-## How it works
+---
 
-### Release pipeline
+## Крос-компіляція в Go: як це працює
 
-```
-git commit → git push → git tag vX.Y.Z → git push origin vX.Y.Z
-                                                    |
-                                        .github/workflows/release.yml
-                                        triggered on: push tags: v*
-                                                    |
-                                        goreleaser/goreleaser-action
-                                        reads .goreleaser.yml
-                                                    |
-                                        go build x5:
-                                          linux/amd64
-                                          linux/arm64
-                                          darwin/amd64
-                                          darwin/arm64
-                                          windows/amd64
-                                                    |
-                                        GitHub Release created
-                                        with binaries + checksums.txt
-```
-
-**Key points:**
-
-- Only a tag push triggers the build — regular commits to `main` do nothing.
-- GoReleaser sets `CGO_ENABLED=0`, so binaries are fully static with no external dependencies.
-- Artifact names follow the pattern `goplatform_<version>_<os>_<arch>` (no `v` prefix in the filename, e.g. `goplatform_1.0.0_linux_amd64`).
-- `GITHUB_TOKEN` is injected automatically by GitHub Actions — no manual secrets needed.
-
-### Installer (`install.sh`)
-
-```
-curl … | sh
-    |
-    ├── detect OS   (uname -s → linux / darwin / windows)
-    ├── detect ARCH (uname -m → amd64 / arm64)
-    |
-    ├── GET https://api.github.com/repos/ognistyi/goplatform/releases/latest
-    │       → extracts tag_name (e.g. v1.2.0)
-    |
-    ├── strips leading 'v' → 1.2.0
-    │   builds filename:  goplatform_1.2.0_darwin_amd64
-    │   builds URL:       github.com/…/releases/download/v1.2.0/goplatform_1.2.0_darwin_amd64
-    |
-    ├── curl download → /tmp/goplatform
-    ├── chmod +x
-    └── mv → /usr/local/bin/goplatform  (sudo if needed)
-```
-
-**Why `v` is stripped:** GoReleaser uses the full tag (`v1.2.0`) in the download URL path but omits the `v` in artifact filenames. The installer handles this discrepancy explicitly.
-
-## Releasing a new version
+Go компілює одразу під будь-яку платформу **без жодних додаткових інструментів** — достатньо задати дві змінні середовища перед `go build`:
 
 ```bash
+GOOS=linux GOARCH=arm64 go build -o goplatform-linux-arm64 .
+```
+
+`GOOS` — операційна система (`linux`, `darwin`, `windows`, ...).
+`GOARCH` — архітектура (`amd64`, `arm64`, `386`, ...).
+
+Go підтримує 47 комбінацій. Весь toolchain вбудований — зовнішній компілятор не потрібен.
+
+### А в інших мовах?
+
+| Мова       | Крос-компіляція                                                                 |
+|------------|---------------------------------------------------------------------------------|
+| **Go**     | Вбудована. Дві змінні — і готово.                                               |
+| **Rust**   | Є, але складніша: потрібно встановити target (`rustup target add`) + лінкер для кожної платформи. Інструмент `cross` спрощує через Docker. |
+| **C/C++**  | Потрібен окремий крос-компілятор (`arm-linux-gnueabihf-gcc` тощо) під кожну мішень. |
+| **Node.js**| Не компілюється — потрібен рантайм на машині. `pkg`/`nexe` пакують рантайм всередину, але це не компіляція. |
+| **PHP**    | Не застосовується — інтерпретатор.                                              |
+
+Go виграє тут за простотою: немає залежності від системного лінкера, тому білд відтворюваний на будь-якій машині.
+
+---
+
+## GitHub Actions: як влаштовані хуки
+
+GitHub Actions — це event-driven система. Кожен "хук" — це реакція на подію в репозиторії.
+
+```
+Подія в репо                   Файл-обробник
+─────────────────────────────────────────────────────
+push в гілку main          →   (не налаштовано)
+відкриття pull request     →   (не налаштовано)
+push тегу  v*              →   .github/workflows/release.yml  <-- наш випадок
+```
+
+Наш workflow файл:
+
+```yaml
+on:
+  push:
+    tags:
+      - 'v*'          # спрацьовує тільки на теги виду v0.1.0, v2.3.1, ...
+```
+
+Тобто звичайні коміти та пуші в `main` **нічого не тригерять**. Лише `git push origin vX.Y.Z` запускає pipeline.
+
+### Що відбувається після тригера
+
+```
+git push origin v1.0.0
+        |
+        v
+GitHub отримує тег
+        |
+        v
+Знаходить .github/workflows/release.yml
+        |
+        v
+Запускає job на ubuntu-latest runner
+        |
+        ├── actions/checkout        -- клонує репо
+        ├── actions/setup-go        -- встановлює Go (версія з go.mod)
+        └── goreleaser-action       -- запускає GoReleaser
+                |
+                ├── читає .goreleaser.yml
+                ├── go build x5  (5 платформ паралельно)
+                ├── генерує checksums.txt
+                └── gh release create  --  публікує GitHub Release
+                        |
+                        v
+              https://github.com/ognistyi/goplatform/releases/tag/v1.0.0
+              з 5 бінарниками + checksums.txt
+```
+
+`GITHUB_TOKEN` — автоматично вбудований у кожен workflow, вручну нічого налаштовувати не треба.
+
+---
+
+## Як працює інсталятор
+
+`install.sh` — звичайний POSIX shell-скрипт. Логіка:
+
+```
+curl -fsSL .../install.sh | sh
+        |
+        v
+1. detect_platform()
+   uname -s  -->  linux / darwin / windows
+   uname -m  -->  x86_64 -> amd64 / aarch64 -> arm64
+
+        |
+        v
+2. fetch_latest_version()
+   GET api.github.com/repos/ognistyi/goplatform/releases/latest
+   --> tag_name: "v1.2.0"
+
+        |
+        v
+3. install_binary()
+   strip 'v'  -->  "1.2.0"   (GoReleaser не включає 'v' в ім'я файлу)
+
+   filename:  goplatform_1.2.0_darwin_amd64
+   url:       github.com/.../releases/download/v1.2.0/goplatform_1.2.0_darwin_amd64
+
+   curl download --> /tmp/goplatform
+   chmod +x
+   mv /usr/local/bin/goplatform   (sudo якщо немає прав)
+
+        |
+        v
+4. /usr/local/bin/goplatform   -- запускає встановлений бінарник
+```
+
+Чому `v` стрипається: GoReleaser використовує повний тег (`v1.2.0`) в URL, але **без `v`** в імені файлу. Це поведінка за замовчуванням GoReleaser — в скрипті це враховано явно.
+
+---
+
+## Випустити нову версію
+
+```bash
+# 1. Закомітити зміни
 git add .
-git commit -m "feat: describe the change"
+git commit -m "feat: your change"
 git push origin main
+
+# 2. Поставити тег і запушити -- це тригерить білд
 git tag v1.2.3
 git push origin v1.2.3
-```
 
-Watch the build:
-
-```bash
+# 3. Слідкувати за білдом (опціонально)
 gh run watch --repo ognistyi/goplatform
+
+# 4. Оновити локальну версію після завершення білда
+curl -fsSL https://raw.githubusercontent.com/ognistyi/goplatform/main/install.sh | sh
 ```
 
-## Local build
+---
+
+## Локальна збірка
 
 ```bash
 go build -o goplatform .
 ./goplatform
 ```
 
-## Cross-compile manually
+Крос-компіляція вручну:
 
 ```bash
 GOOS=linux GOARCH=arm64 go build -o goplatform-linux-arm64 .
