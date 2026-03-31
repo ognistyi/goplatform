@@ -116,40 +116,70 @@ GitHub отримує тег
 
 ## Як працює інсталятор
 
-`install.sh` — звичайний POSIX shell-скрипт. Логіка:
+### macOS / Linux — `install.sh`
 
 ```
 curl -fsSL .../install.sh | sh
-        |
-        v
-1. detect_platform()
-   uname -s  -->  linux / darwin / windows
-   uname -m  -->  x86_64 -> amd64 / aarch64 -> arm64
-
-        |
-        v
-2. fetch_latest_version()
-   GET api.github.com/repos/ognistyi/goplatform/releases/latest
-   --> tag_name: "v1.2.0"
-
-        |
-        v
-3. install_binary()
-   strip 'v'  -->  "1.2.0"   (GoReleaser не включає 'v' в ім'я файлу)
-
-   filename:  goplatform_1.2.0_darwin_amd64
-   url:       github.com/.../releases/download/v1.2.0/goplatform_1.2.0_darwin_amd64
-
-   curl download --> /tmp/goplatform
-   chmod +x
-   mv /usr/local/bin/goplatform   (sudo якщо немає прав)
-
-        |
-        v
-4. /usr/local/bin/goplatform   -- запускає встановлений бінарник
+        │
+        ├── 1. detect_platform()
+        │      uname -s  →  linux / darwin
+        │      uname -m  →  x86_64 → amd64 / aarch64 → arm64
+        │
+        ├── 2. fetch_latest_version()
+        │      GET api.github.com/repos/ognistyi/goplatform/releases/latest
+        │      → tag_name: "v1.2.0"
+        │
+        ├── 3. install_binary()
+        │      strip 'v' → "1.2.0"  (GoReleaser не включає 'v' в ім'я файлу)
+        │      filename: goplatform_1.2.0_darwin_amd64
+        │      url:      github.com/.../releases/download/v1.2.0/goplatform_1.2.0_darwin_amd64
+        │
+        │      curl download → /tmp/goplatform
+        │      chmod +x
+        │      mv → /usr/local/bin/goplatform
+        │
+        └── 4. запускає /usr/local/bin/goplatform
 ```
 
-Чому `v` стрипається: GoReleaser використовує повний тег (`v1.2.0`) в URL, але **без `v`** в імені файлу. Це поведінка за замовчуванням GoReleaser — в скрипті це враховано явно.
+### Windows — `install.ps1`
+
+```
+irm .../install.ps1 | iex
+        │
+        ├── 1. Invoke-RestMethod GitHub API → tag_name
+        │
+        ├── 2. Invoke-WebRequest → завантажує .exe
+        │
+        ├── 3. зберігає в %LOCALAPPDATA%\Programs\goplatform\goplatform.exe
+        │
+        ├── 4. додає цю папку в PATH (user-рівень, без адмін-прав)
+        │
+        └── 5. запускає goplatform.exe
+```
+
+### Як команда стає доступною в терміналі (PATH)
+
+`PATH` — це змінна середовища зі списком директорій, які shell перевіряє коли ти вводиш команду без повного шляху.
+
+```
+goplatform
+    │
+    shell шукає виконуваний файл у кожній директорії з PATH:
+    │
+    ├── /usr/bin         → немає
+    ├── /usr/local/bin   → є! → запускає
+    └── ...
+```
+
+**macOS / Linux:** `/usr/local/bin` вже є в `PATH` за замовчуванням на будь-якій системі — тому після `mv` туди команда одразу доступна без перезапуску терміналу.
+
+**Windows:** інсталятор додає `%LOCALAPPDATA%\Programs\goplatform` в PATH через реєстр (user-рівень, без прав адміністратора). Зміна PATH набуває чинності в **нових** вікнах терміналу — поточне вікно потрібно перезапустити.
+
+```powershell
+# Windows: якщо після встановлення команда не знайдена — просто відкрий новий термінал
+# або тимчасово в поточному:
+$env:PATH += ";$env:LOCALAPPDATA\Programs\goplatform"
+```
 
 ---
 
