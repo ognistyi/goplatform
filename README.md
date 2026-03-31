@@ -59,6 +59,123 @@ Go виграє тут за простотою: немає залежності 
 
 ---
 
+## Що таке GoReleaser
+
+GoReleaser — це CLI-інструмент для автоматизації релізів Go-проєктів. Замість того щоб вручну запускати `go build` для кожної платформи, завантажувати файли на GitHub і писати release notes — достатньо однієї команди `goreleaser release`.
+
+Він читає `.goreleaser.yml` і виконує весь pipeline:
+
+```
+goreleaser release
+        │
+        ├── go build × N платформ   (з правильними GOOS/GOARCH/ldflags)
+        ├── генерує checksums.txt
+        └── створює GitHub Release з усіма файлами
+```
+
+У нашому проєкті GoReleaser запускається не вручну, а автоматично через GitHub Actions. Ось як це зв'язано:
+
+```
+.github/workflows/release.yml   ← це файл конфігурації GitHub Actions
+        │
+        │  у ньому є крок:
+        │
+        └── uses: goreleaser/goreleaser-action@v6
+                    │
+                    │  goreleaser-action — це "Action" (плагін для GitHub Actions).
+                    │  GitHub завантажує його код з github.com/goreleaser/goreleaser-action,
+                    │  встановлює GoReleaser на VM і запускає `goreleaser release`.
+                    │
+                    └── читає .goreleaser.yml  ← наш конфіг що і як білдити
+```
+
+**GitHub Actions** — це платформа CI/CD вбудована в GitHub. Вона дозволяє запускати довільні команди на VM при певних подіях (пуш, тег, PR тощо).
+
+**Action** (`uses: ...`) — це готовий блок логіки який хтось написав і опублікував на GitHub Marketplace. `goreleaser/goreleaser-action` — один з таких блоків, написаний командою GoReleaser. Ти можеш використати будь-який Action з маркетплейсу або написати свій.
+
+Тобто GoReleaser сам по собі ніяк не пов'язаний з GitHub — це просто CLI. GitHub Actions лише завантажує і запускає його на своїй VM, так само як ти міг би запустити його локально командою `goreleaser release`.
+
+Окрім крос-компіляції GoReleaser вміє: генерувати changelog з git-логу, публікувати в Homebrew/Scoop/Docker, підписувати артефакти і багато іншого — https://goreleaser.com/intro/
+
+### Що ще доступно в GitHub Actions
+
+GitHub Actions Marketplace містить тисячі готових Actions — https://github.com/marketplace?type=actions
+
+Популярні приклади:
+- `actions/setup-node`, `setup-python`, `setup-java` — встановити рантайм будь-якої мови
+- `docker/build-push-action` — зібрати і запушити Docker-образ
+- `codecov/codecov-action` — відправити coverage-звіт
+- `slackapi/slack-github-action` — надіслати повідомлення в Slack
+
+### Чи можна написати свій Action
+
+Так. Action — це або Docker-контейнер, або JavaScript/TypeScript скрипт, або composite (набір shell-команд). Публікується як звичайний GitHub-репозиторій з файлом `action.yml`. Після публікації будь-хто може підключити його через `uses: твій-юзер/назва-репо@v1`.
+
+Якщо потреби публікувати немає — можна писати логіку прямо в `run:` блоках workflow-файлу як звичайні shell-команди:
+
+```yaml
+- name: My custom step
+  run: |
+    echo "Це звичайний bash на GitHub VM"
+    ./my-script.sh
+```
+
+### Запуск власного бінарника або кастомного стеку на VM
+
+VM — це повноцінний Linux. Можна встановлювати пакети, запускати бінарники, піднімати сервіси. Приклади:
+
+```yaml
+# встановити будь-який пакет через apt
+- run: sudo apt-get install -y jq
+
+# завантажити і запустити свій бінарник
+- run: |
+    curl -fsSL https://example.com/my-tool -o my-tool
+    chmod +x my-tool
+    ./my-tool --flag
+
+# підняти PHP + Composer
+- uses: shivammathur/setup-php@v2
+  with:
+    php-version: '8.3'
+- run: composer install
+
+# запустити MySQL як сервіс поруч з тестами
+services:
+  mysql:
+    image: mysql:8
+    env:
+      MYSQL_ROOT_PASSWORD: secret
+    ports:
+      - 3306:3306
+```
+
+VM живе тільки під час одного запуску workflow, після чого знищується разом з усіма даними.
+
+### Ліміти та за що можуть заблокувати
+
+**Безкоштовні ліміти (public репо — безлімітно, private репо):**
+
+| Ресурс | Free plan |
+|---|---|
+| Хвилини на місяць | 2 000 хв |
+| Місце для артефактів | 500 MB |
+| Максимум часу одного job | 6 годин |
+| Паралельних jobs | 20 |
+
+**За що блокують акаунт:**
+- Майнінг криптовалюти — найпоширеніша причина блокування, GitHub детектить автоматично
+- Запуск DDoS / проксі / VPN на VM
+- Масовий спам через workflow (розсилки, накрутка)
+- Зберігання великих бінарників через артефакти як CDN (замість GitHub Releases)
+- Brute-force або сканування через CI
+
+Для публічних репозиторіїв хвилини безкоштовні, але правила порушувати не можна — бан приходить на весь акаунт.
+
+Детально: https://docs.github.com/en/actions/administering-github-actions/usage-limits-billing-and-administration
+
+---
+
 ## GitHub Actions: як влаштовані хуки
 
 GitHub Actions — це event-driven система. Кожен "хук" — це реакція на подію в репозиторії.
